@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Blackburn Highlights</title>
+<style>
+  :root { --bg:#111418; --panel:#1b2027; --text:#e8ecf1; --muted:#8a94a3; --accent:#2f7de1; --line:#2a313b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .wrap { max-width:1400px; margin:0 auto; padding:16px; display:grid; grid-template-columns:1fr 380px; gap:16px; }
+  @media (max-width:900px) { .wrap { grid-template-columns:1fr; } }
+  h1 { font-size:18px; margin:0 0 4px; }
+  select { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; margin:4px 0 8px; max-width:100%; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:12px; }
+  .video { position:relative; aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden; }
+  .video > div, .video iframe { position:absolute; inset:0; width:100%; height:100%; }
+  .bar { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  button { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  .now { flex:1; min-width:200px; }
+  .now b { display:block; }
+  .now span { color:var(--muted); font-size:13px; }
+  .prog { height:4px; background:var(--line); border-radius:2px; margin-top:6px; overflow:hidden; }
+  .prog i { display:block; height:100%; width:0; background:var(--accent); }
+  ol { list-style:none; margin:0; padding:0; background:var(--panel); border-radius:8px; max-height:calc(100vh - 32px); overflow:auto; }
+  li { padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer; display:grid; grid-template-columns:28px 1fr; gap:4px; }
+  li:hover { background:#232a33; }
+  li.active { background:#1f3350; }
+  li.done .t { color:var(--muted); }
+  li .n { color:var(--muted); font-variant-numeric:tabular-nums; }
+  li .z { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .err { display:none; margin-top:12px; padding:10px 12px; background:#4a1f1f; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>FM27 Blackburn Rovers: Highlights</h1>
+    <select id="ep"></select>
+    <div class="sub" id="sub"></div>
+    <div class="video"><div id="player"></div></div>
+    <div class="bar">
+      <button id="prev">◀ Zurück</button>
+      <button id="next">Weiter ▶</button>
+      <div class="now"><b id="title">Lädt …</b><span id="info"></span><div class="prog"><i id="bar"></i></div></div>
+    </div>
+    <div class="err" id="err"></div>
+  </div>
+  <ol id="list"></ol>
+</div>
+
+<script>
+// Neue Folgen werden hier ergänzt: { id: YouTube-ID, titel: ..., seg: [[Start-Sek., Ende-Sek., Titel], ...] }
+const EPISODEN = [
+  { id: "uShRB3H7brg", titel: "Episode 1: Willkommen bei den Blackburn Rovers", seg: [[1320,1720,"Vereinswahl: Enthüllung Blackburn Rovers"],[2005,2065,"Spielregeln: Editor aus, keine Transfers im Sommer"],[3745,4078,"Trainerprofil & Vorstellung als neuer Trainer"],[4325,4470,"Vereinsgeschichte: Meister 1995"],[5510,5640,"Google Maps: Trainingsgelände & 'Wohnung' suchen"],[5950,6276,"Vorstand: Finanzen, Einrichtungen, Fans, Ziele"],[6770,6825,"Spielplan & Medientipp Platz 18"],[7145,7304,"Erster Blick auf den Kader"],[8795,8850,"Rivalen: Derby gegen Burnley"],[9045,9195,"Finanzen: 154 Mio. Schulden, Wharton-Klausel"],[9605,9840,"Mitarbeiter: Regeln & Physio (Ex-Spieler)"],[11735,12038,"Kaderanalyse: Torwart & Abwehr"],[12590,12695,"Kaderfazit: Viererkette, Jugend zu schwach"],[14200,14385,"Taktik: Aufbau mit Ball erklärt"],[14945,15040,"Spielidee: ruhiger Aufbau, kein Pressing, kein langer Hafer"],[15120,15285,"Aufstellung: Garrett oder Baracci?"],[15695,15840,"Mannschaftsanweisungen mit Ball"],[17445,17540,"Erste Ansprache an die Mannschaft & Presse"],[18285,18785,"Testspiel FC Tuggen: Taktik-Analyse im 2D-Spiel"],[18820,19170,"Testspiel FC Tuggen: Wechsel, weitere Tore, 4:0"],[20490,20535,"Cantwell muss im Winter verkauft werden"],[21454,21608,"Teambesprechung: Saisonziele & Verkäufe"],[23055,23210,"Testspiel Inter U23: Anpfiff"],[23540,23615,"Testspiel Inter U23: Sieg"],[24980,25130,"Testspiel Bielefeld: 2. Halbzeit"],[26600,26990,"Ligapokal bei Sheffield Utd: Anpfiff, 1:0, 1:1"],[27120,27660,"Ligapokal: Wechsel, 1:2, Comeback zum 3:2 & Fazit"]] },
+];
+
+const hashEp = parseInt((location.hash.match(/ep(\d+)/) || [])[1], 10) - 1;
+let ep = (hashEp >= 0 && hashEp < EPISODEN.length) ? hashEp : EPISODEN.length - 1;
+let VIDEO = EPISODEN[ep].id, SEG = EPISODEN[ep].seg;
+const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (h ? h + ":" + String(m).padStart(2,"0") : m) + ":" + String(x).padStart(2,"0"); };
+
+let cur = 0, player, timer, advancing = false;
+
+const list = document.getElementById("list");
+function bauListe() {
+list.innerHTML = "";
+SEG.forEach(([a, b, t], i) => {
+  const li = document.createElement("li");
+  li.innerHTML = `<span class="n">${i + 1}</span><span><span class="t"></span><br><span class="z">${fmt(a)} – ${fmt(b)} · ${fmt(b - a)} Min.</span></span>`;
+  li.querySelector(".t").textContent = t;
+  li.onclick = () => play(i);
+  list.appendChild(li);
+});
+const ges = SEG.reduce((x, [a, b]) => x + b - a, 0);
+document.getElementById("sub").textContent = `${SEG.length} Abschnitte, ca. ${Math.round(ges / 60)} Minuten. Springt automatisch zum nächsten Abschnitt.`;
+}
+function ladeFortschritt() {
+  cur = 0;
+  try { const v = parseInt(localStorage.getItem("bb_seg_" + VIDEO) ?? (ep === 0 ? localStorage.getItem("bb_seg") : null), 10); if (v >= 0 && v < SEG.length) cur = v; } catch (e) {}
+}
+ladeFortschritt();
+bauListe();
+
+function mark() {
+  [...list.children].forEach((li, i) => { li.classList.toggle("active", i === cur); li.classList.toggle("done", i < cur); });
+  list.children[cur].scrollIntoView({ block: "nearest" });
+  const [a, b, t] = SEG[cur];
+  document.getElementById("title").textContent = `${cur + 1}/${SEG.length}: ${t}`;
+  try { localStorage.setItem("bb_seg_" + VIDEO, cur); } catch (e) {}
+}
+
+function play(i) {
+  if (i < 0 || i >= SEG.length) return;
+  cur = i; advancing = false; mark();
+  const [a, b] = SEG[i];
+  player.loadVideoById({ videoId: VIDEO, startSeconds: a, endSeconds: b });
+}
+
+function next() {
+  if (advancing) return;
+  advancing = true;
+  if (cur + 1 < SEG.length) play(cur + 1);
+  else { document.getElementById("title").textContent = "Fertig – alle Highlights gesehen."; player.pauseVideo(); }
+}
+
+function tick() {
+  if (!player || !player.getCurrentTime) return;
+  const [a, b] = SEG[cur], t = player.getCurrentTime();
+  document.getElementById("info").textContent = `${fmt(Math.min(Math.max(t - a, 0), b - a))} / ${fmt(b - a)}  ·  Original ${fmt(t)}`;
+  document.getElementById("bar").style.width = Math.min(100, Math.max(0, (t - a) / (b - a) * 100)) + "%";
+  if (t >= b - 0.3 && player.getPlayerState() === 1) next();
+}
+
+window.onYouTubeIframeAPIReady = () => {
+  player = new YT.Player("player", {
+    videoId: VIDEO,
+    playerVars: { start: SEG[cur][0], end: SEG[cur][1], rel: 0, playsinline: 1, origin: location.origin },
+    events: {
+      onReady: () => { mark(); timer = setInterval(tick, 250); },
+      onStateChange: e => { if (e.data === YT.PlayerState.ENDED) next(); if (e.data === YT.PlayerState.PLAYING) advancing = false; },
+      onError: e => {
+        const box = document.getElementById("err");
+        box.style.display = "block";
+        box.textContent = (e.data === 101 || e.data === 150 || e.data === 153)
+          ? "YouTube verweigert die Wiedergabe in dieser Seite (Fehler " + e.data + "). Öffne die Seite über http://localhost:8000 (siehe Anleitung), nicht per Doppelklick."
+          : "YouTube-Fehler " + e.data + ".";
+      }
+    }
+  });
+};
+
+const sel = document.getElementById("ep");
+EPISODEN.forEach((e, i) => { const o = document.createElement("option"); o.value = i; o.textContent = e.titel; sel.appendChild(o); });
+sel.value = ep;
+sel.onchange = () => {
+  ep = +sel.value; VIDEO = EPISODEN[ep].id; SEG = EPISODEN[ep].seg;
+  history.replaceState(null, "", "#ep" + (ep + 1));
+  ladeFortschritt(); bauListe(); mark();
+  player.cueVideoById({ videoId: VIDEO, startSeconds: SEG[cur][0], endSeconds: SEG[cur][1] });
+};
+
+document.getElementById("prev").onclick = () => play(cur - 1);
+document.getElementById("next").onclick = () => { advancing = false; next(); };
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight" && e.shiftKey) { advancing = false; next(); }
+  if (e.key === "ArrowLeft" && e.shiftKey) play(cur - 1);
+});
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body>
+</html>
